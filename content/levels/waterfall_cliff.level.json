@@ -53,6 +53,10 @@
     "x": 9,
     "y": 23
   },
+  "lights": [
+    {"id":"alcoveW","on":true,"preset":"lanternHook","x":6,"y":4.3,"z":2.6},
+    {"id":"alcoveE","on":true,"preset":"lanternHook","x":11.5,"y":4.3,"z":2.6}
+  ],
   "props": [],
   "triggers": [],
   "water": [

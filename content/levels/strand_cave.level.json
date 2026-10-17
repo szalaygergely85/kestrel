@@ -118,7 +118,13 @@
     {"id": "caveEast", "on": true, "preset": "lanternHook", "x": 11, "y": 3.5, "z": 4.6},
     {"id": "caveMouth", "on": true, "preset": "lanternHook", "x": 4, "y": 8, "z": 4.6},
     {"id": "caveRakeW", "note": "VISQA-28: low raking glow along the west wall (off-axis) so wall + ceiling read as shape", "on": true, "preset": "lanternFloor", "x": 2.4, "y": 7.2, "z": 3.9},
-    {"id": "caveRakeE", "note": "VISQA-28: low raking glow on the east wall, opposite corner", "on": true, "preset": "lanternFloor", "x": 12.4, "y": 2.6, "z": 3.9}
+    {"id": "caveRakeE", "note": "VISQA-28: low raking glow on the east wall, opposite corner", "on": true, "preset": "lanternFloor", "x": 12.4, "y": 2.6, "z": 3.9},
+    {"id":"tunW1","on":true,"preset":"lanternHook","x":5.3,"y":11.7,"z":4.4},
+    {"id":"tunE1","on":true,"preset":"lanternHook","x":9.7,"y":14.5,"z":4.4},
+    {"id":"tunW2","on":true,"preset":"lanternHook","x":5.3,"y":17.5,"z":4.4},
+    {"id":"tunE2","on":true,"preset":"lanternHook","x":9.7,"y":20.5,"z":4.4},
+    {"id":"tunW3","on":true,"preset":"lanternHook","x":5.3,"y":23,"z":4.4},
+    {"id":"tunE3","on":true,"preset":"lanternHook","x":9.7,"y":24.3,"z":4.4}
   ],
   "props": [],
   "interactables": [],
