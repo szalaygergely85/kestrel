@@ -48,4 +48,35 @@ assert.ok(setRewardItems(q, { heartPiece: 1 }).cmd);
 const fq = model.quests.find((x) => x.raw.rewards !== undefined);
 if (fq) { const c = setRewardItems(fq, { heartPiece: 1 }); c.cmd.apply(); assert.ok(fq.raw.rewards.heartPiece === 1 && fq.raw.reward === undefined); c.cmd.undo(); }
 assert.equal(rewardLint({ raw: { id: 'x' } }, defs).length, 1, 'no reward = warning');
+// ED-QUI-10 branch edits
+import { setBranchText, setBranchGoto, setBranchFlags, gotoTargets } from './conversation.js';
+{
+  const q = by('sq.burl.blue'), dm3 = loadDialogues(join(root, 'content/dialogue'), fs);
+  const key = 'bear.dialogue.json#bear.blue.offer.2', nd = dm3.files.get('bear.dialogue.json').obj.nodes['bear.blue.offer.2'];
+  assert.equal(dialogueText(dm3.files.get('bear.dialogue.json')), dm3.files.get('bear.dialogue.json').text, 'untouched round-trips byte-identically');
+  const was = JSON.stringify(nd.choices);
+  // text: R19 38 cap, empty refused, undo
+  assert.ok(setBranchText(q, key, 0, 'x'.repeat(39), dm3).error && setBranchText(q, key, 0, '  ', dm3).error && setBranchText(q, key, 5, 'a', dm3).error);
+  const t = setBranchText(q, key, 0, "I'll bring six.", dm3); t.cmd.apply(); assert.equal(nd.choices[0].text, "I'll bring six.");
+  const f3 = dm3.files.get('bear.dialogue.json'), txt = dialogueText(f3);
+  assert.ok(txt.includes(`{"next": "bear.blue.accepted", "setFlag": "q.sq.burl.blue.accept", "text": "I'll bring six."}`), 'choice re-rendered in place');
+  assert.equal(JSON.stringify(JSON.parse(txt).nodes['bear.blue.offer.2'].choices), JSON.stringify(nd.choices));
+  assert.equal(txt.split('"next"').length, f3.text.split('"next"').length, 'only the one choice line changed');
+  t.cmd.undo(); assert.equal(JSON.stringify(nd.choices), was); assert.equal(dialogueText(f3), f3.text, 'undo restores bytes');
+  // goto: must exist; picker lists quest nodes; Exit choice can be retargeted or ended, Accept cannot be ended
+  assert.ok(setBranchGoto(q, key, 1, 'nope.node', dm3).error && setBranchGoto(q, key, 0, '', dm3).error);
+  assert.ok(gotoTargets(dm3, q, key).includes('bear.blue.accepted'));
+  const g = setBranchGoto(q, key, 1, 'bear.blue.active', dm3); g.cmd.apply(); assert.equal(nd.choices[1].next, 'bear.blue.active'); assert.deepEqual(conversationView(dm3, q).problems, []);
+  assert.equal(JSON.parse(dialogueText(f3)).nodes['bear.blue.offer.2'].choices[1].next, 'bear.blue.active'); g.cmd.undo();
+  const e = setBranchGoto(q, key, 1, '', dm3); e.cmd.apply(); assert.ok(!('next' in nd.choices[1])); e.cmd.undo(); assert.equal(JSON.stringify(nd.choices), was);
+  // flags: one flag, valid name, Accept flag locked
+  assert.ok(setBranchFlags(q, key, 1, ['a.b', 'c.d'], dm3).error && setBranchFlags(q, key, 1, ['Bad Flag'], dm3).error);
+  assert.ok(setBranchFlags(q, key, 0, [], dm3).error && setBranchFlags(q, key, 0, ['other.flag'], dm3).error, 'accept flag locked');
+  assert.ok(setBranchFlags(q, key, 0, ['q.sq.burl.blue.accept'], dm3).cmd, 'same accept flag is fine');
+  const fl = setBranchFlags(q, key, 1, ['mood.sour'], dm3); fl.cmd.apply();
+  assert.deepEqual(Object.keys(nd.choices[1]), ['next', 'setFlag', 'text'], 'new key lands alphabetically');
+  assert.equal(JSON.parse(dialogueText(f3)).nodes['bear.blue.offer.2'].choices[1].setFlag, 'mood.sour');
+  const view = conversationView(dm3, q); assert.ok(view.nodes.some((n) => n.branches.some((b) => b.sets[0] === 'mood.sour')));
+  fl.cmd.undo(); assert.equal(JSON.stringify(nd.choices), was); assert.equal(dialogueText(f3), f3.text);
+}
 console.log('conversation.test PASS');

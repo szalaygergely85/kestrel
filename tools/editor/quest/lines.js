@@ -30,11 +30,11 @@ export function loadDialogues(dir, fs) {
 const nodeLines = (obj, id) => (obj.nodes && obj.nodes[id] && Array.isArray(obj.nodes[id].lines) ? obj.nodes[id].lines : null);
 const renderLines = (a) => (a.length ? '[\n' + a.map((l) => '      ' + JSON.stringify(l)).join(',\n') + '\n    ]' : '[]');
 
-/** Replaces the `lines` array of node `id` inside the raw text; null when the node can't be located. */
-function replaceNodeLines(text, id, arr) {
+/** Replaces the array `key` ("lines" / "choices") of node `id` inside the raw text with `rendered`; null when it can't be located. */
+function replaceNodeArray(text, id, key, rendered) {
   const m = new RegExp('"' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"\\s*:\\s*\\{').exec(text);
   if (!m) return null;
-  const k = text.indexOf('"lines"', m.index);
+  const k = text.indexOf('"' + key + '"', m.index);
   if (k < 0) return null;
   const open = text.indexOf('[', k);
   let i = open, depth = 0, inStr = false;
@@ -43,18 +43,23 @@ function replaceNodeLines(text, id, arr) {
     if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; continue; }
     if (c === '"') inStr = true; else if (c === '[') depth++; else if (c === ']' && --depth === 0) { i++; break; }
   }
-  return text.slice(0, open) + renderLines(arr) + text.slice(i);
+  return text.slice(0, open) + rendered + text.slice(i);
 }
+/** Choices render on one line like the generator wrote them: [{"next": "a", "text": "b"}, ...] (ED-QUI-10). */
+const renderChoices = (a) => '[' + a.map((c) => '{' + Object.entries(c).map(([k, v]) => JSON.stringify(k) + ': ' + JSON.stringify(v)).join(', ') + '}').join(', ') + ']';
+const nodeChoices = (obj, id) => (obj.nodes && obj.nodes[id] && Array.isArray(obj.nodes[id].choices) ? obj.nodes[id].choices : null);
 
-/** Text a dialogue file would be saved as (original text if no node's lines changed). */
+/** Text a dialogue file would be saved as (original text if no node's lines / choices changed). */
 export function dialogueText(f) {
   let text = f.text;
   for (const id of Object.keys(f.obj.nodes || {})) {
-    const now = nodeLines(f.obj, id), was = nodeLines(f.orig, id);
-    if (!now || JSON.stringify(now) === JSON.stringify(was)) continue;
-    const next = replaceNodeLines(text, id, now);
-    if (next === null) throw new Error(`${f.name}: cannot locate node ${id}`);
-    text = next;
+    for (const [key, get, render] of [['lines', nodeLines, renderLines], ['choices', nodeChoices, renderChoices]]) {
+      const now = get(f.obj, id), was = get(f.orig, id);
+      if (!now || JSON.stringify(now) === JSON.stringify(was)) continue;
+      const next = replaceNodeArray(text, id, key, render(now));
+      if (next === null) throw new Error(`${f.name}: cannot locate node ${id}`);
+      text = next;
+    }
   }
   return text;
 }

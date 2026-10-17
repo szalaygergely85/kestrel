@@ -2,7 +2,7 @@
 // (speaker, node id, quoted editable lines with a live "n / 56" counter, read-only branches) and the "Changed text" list for the writer.
 // Logic lives in quest/lines.js (edits) and quest/conversation.js (view model).
 import { LINE_MAX, lineLength, setLine, addLine, deleteLine, moveLine, changedLines, exportChangedText } from './quest/lines.js';
-import { conversationView, nodeRole } from './quest/conversation.js';
+import { conversationView, nodeRole, setBranchText, setBranchGoto, setBranchFlags, gotoTargets, BRANCH_TEXT_MAX } from './quest/conversation.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -18,6 +18,37 @@ export function renderLineEditor(ctx) {
   const box = el('div', 'q-lines'); box.id = 'quest-lines';
   const view = conversationView(dm, q, names);
   const act = (label, fn, cls = 'ed-btn') => { const b = el('button', cls, label); b.addEventListener('click', () => { const res = fn(); if (res.error) setMsg(res.error); else { setMsg(''); run(res.cmd); } }); return b; };
+  // ED-QUI-10: an editable branch = [choice text n/38] -> GOTO <node picker> + flag; logic in quest/conversation.js (refusals shown in the message line)
+  const gotoBtn = (b) => {
+    const g = el('button', 'q-goto', 'GOTO ' + b.goto); g.title = 'Scroll to that node';
+    g.addEventListener('click', () => { const tg = box.querySelector('[data-node="' + b.goto.replace(/"/g, '') + '"]'); if (tg && tg.scrollIntoView) tg.scrollIntoView({ block: 'nearest' }); });
+    return g;
+  };
+  const readBranch = (b) => {
+    const br = el('div', 'q-branch' + (b.dangling ? ' bad' : ''));
+    br.append(el('span', 'q-btext', '[' + b.text + ']'));
+    if (b.goto) br.append(gotoBtn(b));
+    return br;
+  };
+  const branchRow = (n, b) => {
+    const br = el('div', 'q-branch' + (b.dangling ? ' bad' : '') + (b.accept ? ' accept' : '')); br.dataset.branch = b.index;
+    const tx = el('input', 'q-btext-in'); tx.type = 'text'; tx.value = b.text; tx.maxLength = BRANCH_TEXT_MAX; tx.title = 'Choice text (' + BRANCH_TEXT_MAX + ' characters)';
+    const cnt = el('span', 'q-count', `${lineLength(b.text)} / ${BRANCH_TEXT_MAX}`);
+    tx.addEventListener('input', () => { cnt.textContent = `${lineLength(tx.value)} / ${BRANCH_TEXT_MAX}`; cnt.classList.toggle('over', lineLength(tx.value) > BRANCH_TEXT_MAX); });
+    const go = (fn, revert) => { const res = fn(); if (res.error) { setMsg(res.error); revert(); } else { setMsg(''); run(res.cmd); } };
+    tx.addEventListener('change', () => go(() => setBranchText(q, n.key, b.index, tx.value, dm), () => { tx.value = b.text; }));
+    const pick = el('select', 'q-bgoto'); pick.title = 'Where this choice leads';
+    const ids = gotoTargets(dm, q, n.key); if (b.goto && !ids.includes(b.goto)) ids.unshift(b.goto);
+    if (!b.accept) pick.append(new Option('(ends the conversation)', ''));
+    for (const id of ids) pick.append(new Option('GOTO ' + id, id));
+    pick.value = b.goto;
+    pick.addEventListener('change', () => go(() => setBranchGoto(q, n.key, b.index, pick.value, dm), () => { pick.value = b.goto; }));
+    const fl = el('input', 'q-bflag'); fl.type = 'text'; fl.value = b.sets[0] || ''; fl.placeholder = 'sets flag'; fl.title = 'Flag this choice sets (one)'; fl.readOnly = b.accept;
+    fl.addEventListener('change', () => go(() => setBranchFlags(q, n.key, b.index, fl.value.trim() ? [fl.value.trim()] : [], dm), () => { fl.value = b.sets[0] || ''; }));
+    br.append(tx, cnt, pick, fl);
+    if (b.gate) br.append(el('span', 'q-ometa', 'IF ' + b.gate));
+    return br;
+  };
   const grid = el('div', 'q-nodes');
   for (const n of view.nodes) {
     const t = el('div', 'q-node' + (n.branches.some((b) => b.dangling) ? ' bad' : '')); t.dataset.node = n.id;
@@ -52,18 +83,7 @@ export function renderLineEditor(ctx) {
     t.append(act('Add line to ' + n.stage.toLowerCase(), () => addLine(q, n.key, '', dm)));
     if (n.accept || n.exit) t.append(el('div', 'q-ometa', (n.accept ? 'Accept (E)' : '') + (n.accept && n.exit ? '   ' : '') + (n.exit ? 'Exit (Q)' : '')));
     for (const s of n.sets) t.append(el('div', 'q-branch', 'SETS ' + s));
-    for (const b of n.branches) {
-      const br = el('div', 'q-branch' + (b.dangling ? ' bad' : '') + (b.accept ? ' accept' : ''));
-      br.append(el('span', 'q-btext', b.text ? '[' + b.text + ']' : '[...]'));
-      if (b.goto) {
-        const g = el('button', 'q-goto', 'GOTO ' + b.goto); g.title = 'Scroll to that node';
-        g.addEventListener('click', () => { const tg = box.querySelector('[data-node="' + b.goto.replace(/"/g, '') + '"]'); if (tg && tg.scrollIntoView) tg.scrollIntoView({ block: 'nearest' }); });
-        br.append(g);
-      }
-      if (b.gate) br.append(el('span', 'q-ometa', 'IF ' + b.gate));
-      for (const s of b.sets) br.append(el('span', 'q-ometa', 'SETS ' + s));
-      t.append(br);
-    }
+    for (const b of n.branches) t.append(b.editable ? branchRow(n, b) : readBranch(b));
     grid.append(t);
   }
   box.append(grid);

@@ -691,7 +691,7 @@ for (const [name, breakFixture, finding] of areaCases) {
   ok('R19 growth fails', applyR19Allow([...hit, ...q({ journal: 'y'.repeat(40) })], { 'content/quests/x.quest.json|objlen': 1 }).length === 1);
   { const g = groupR19ByPack([...hit, ...hit, { file: 'content/quests/other.json', kind: 'objlen', where: 'a', text: 'z' }, { file: 'content/quests/ch3/pack.json', kind: 'esc', where: 'b', text: 'Esc' }], { 'content/quests/x.quest.json|objlen': 2, 'content/quests/other.json|objlen': 1 });
     ok('R19 groupByPack groups allow-listed hits per pack', Object.keys(g).sort().join() === 'other.json,x.quest.json' && g['x.quest.json'].length === 2 && g['other.json'].length === 1); }
-  ok('R19 real allow-list only shrinks (total <= 93, QUEST-WRITER-BATCH-01)', Object.values(R19_ALLOW).reduce((a, b) => a + b, 0) <= 93);
+  ok('R19 real allow-list only shrinks (total <= 0, QUEST-WRITER-BATCH-01 done)', Object.values(R19_ALLOW).reduce((a, b) => a + b, 0) <= 0);
   ok('R19 real allow-list is non-negative ints', Object.values(R19_ALLOW).every((n) => Number.isInteger(n) && n > 0));
 }
 
