@@ -20,6 +20,7 @@ import { createHash } from 'node:crypto';
 import { UNDER_WGSL, UNDER_DEFAULT, makeUnderState, underShade } from '../../underwater.js';
 import { numericLiterals } from './wgslProbe.js';
 import { makeFarGrass, FG_TYPES } from '../../terrainShade.js';
+import { setFarForest, setFarForestDay, farForestDayOf } from '../../terrainShade.js';
 import { shadeTerrain, hashFastU, hashFast01, shadeGrass, grassTableFor, packGrassTable, GRASS_GX_HAS } from '../../terrainShade.js';
 import { blendLook } from '../../look.js';
 import { packMaterialTable, MAT_F_WIDTH, MAT_I_WIDTH, SET_I_WIDTH, SET_F_WIDTH, MAX_LEVELS } from '../ShadeTextures.js';
@@ -223,7 +224,7 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   // G2 + P3: far grass record (null = tier off, uniforms zero); types 0..2 get random ramp colours, type 3 stays 0
   let FGREC = null;
   const mkFg = () => { const r = makeFarGrass(); r.on = 1; r.startM = 12; r.fadeM = 6; r.dirX = 0.6; r.dirY = 0.8; r.cyc = 0.25; r.invTravel = 0.2; for (let i = 0; i < 3; i++) { for (let c = 0; c < 3; c++) r.types[i * 4 + c] = Math.fround(rand() * 255); r.types[i * 4 + 3] = 1; } return r; };
-  const makeSu = (hashCell, wet = 0, floorY = 0, sky = null) => ({
+  const makeSu = (hashCell, wet = 0, floorY = 0, sky = null, ff = null) => ({
     skyline: sky ? { x: sky.fogMax, y: sky.fromZ, z: sky.seaFogMax, w: sky.seaLevel } : { x: 0, y: 0, z: 0, w: 0 }, // MAP-06b
     hashCell, nearDetailOn: 1, handover: { x: 40, y: 90 }, closeBand: 40, fgMin: shadingT.fgMin, fgMaxGain: shadingT.fgMaxGain, bandNear: bands.near, bandMid: bands.mid,
     terrainFogStart: fog.start, terrainFogFull: fog.full, terrainFogCurve: fog.curve,
@@ -232,14 +233,14 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
     fgP: FGREC ? { x: 1 + (FGREC.under || 0), y: FGREC.startM, z: FGREC.fadeM, w: FGREC.mix } : { x: 0, y: 0, z: 1, w: 0 }, fgW: FGREC ? { x: FGREC.dirX, y: FGREC.dirY, z: FGREC.cyc, w: FGREC.invTravel } : { x: 0, y: 0, z: 0, w: 0 }, fgQ: FGREC ? { x: FGREC.qb, y: FGREC.tPrev, z: FGREC.qt, w: 0 } : { x: 0, y: 0, z: 0, w: 0 }, /* AA-22 */
     fgT: Array.from({ length: FG_TYPES }, (_, i) => FGREC ? { x: FGREC.types[i * 4], y: FGREC.types[i * 4 + 1], z: FGREC.types[i * 4 + 2], w: FGREC.types[i * 4 + 3] } : { x: 0, y: 0, z: 0, w: 0 }),
     cliff: { x: 1, y: 1, z: 0, w: 0 }, // OB-104b2: rock = fixture row 1
-    skyGlowOn: { x: 0, y: floorY, z: 0, w: 1 }, faceK: [{ w: 0 }, { w: 0 }], // DN-02 + OB-222 candidate off
+    skyGlowOn: { x: 0, y: floorY, z: 0, w: 1 }, faceK: [{ w: 0 }, { w: ff ? 1 : 0 }], sunI: ff ? ff.sunI : 0, sunDir: { x: 0, y: 0, z: ff ? ff.sunZ : 0 }, // DN-02 + OB-222 far forest (ff = null: off)
   });
   const MAX_F = MAX_FEATURES_PER_TYPE;
-  function runTerrain(src, trials, wet = 0, floorY = 0, sky = null) {
+  function runTerrain(src, trials, wet = 0, floorY = 0, sky = null, ff = null) {
     let bad = 0, n = 0, faces = 0, closeN = 0, cliffN = 0, fgN = 0, fgGlyph = 0, nearAnim = 0;
     const h = mkHash(src);
     for (const hashCell of [0, 3, -0.05]) {
-      const suT = makeSu(hashCell, wet, floorY, sky);
+      const suT = makeSu(hashCell, wet, floorY, sky, ff);
       const base = { ...shims, textureLoad, su: suT, uTlook: uTl, uGain, imul, ...h, MAX_FEATURES_PER_TYPE: MAX_F, FOREST_FACE_NZ,
         exp2: (x) => Math.pow(2, x), ceil: Math.ceil, log2: Math.log2, pow: Math.pow };
       base.samplePowLUT = compileFn(SHADE_WGSL, 'samplePowLUT', base);
@@ -257,14 +258,16 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
       const st = compileFn(src, 'shadeTerrain', base);
       const ctx = { tlook, tlookWidth: TLOOK_WIDTH, bands, fog, shading: { ...shadingT, wetness: wet, floorLum: floorY }, closeBand: 40, handover: [40, 90], features: null, hashCell, skyline: sky, cliffType: 1, farGrass: FGREC || undefined };
       for (let t = 0; t < trials; t++) {
-        const type = Math.floor(rand() * rows), tt = rand() < 0.5 ? rand() * 60 : rand() * 1700;
-        const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = Math.floor(rand() * 3);
+        const type = ff ? 2 : Math.floor(rand() * rows), tt = ff ? ff.t : (rand() < 0.5 ? rand() * 60 : rand() * 1700);
+        const b = rand() * 1.3, u = rand() * 900 - 100, v = rand() * 900 - 100, time = rand() * 20, faceMode = ff ? 1 : Math.floor(rand() * 3);
         const z = sky ? (rand() < 0.3 ? sky.seaLevel + rand() : rand() * 200 - 20) : 0; // MAP-06b: around fromZ and the sea level
         const o = { glyph: 0, fg: new Uint8Array(3), bg: new Uint8Array(3), level: 255 };
         // OB-104b2: random unit normal (N.z spans both sides of CLIFF_NZ 0.5)
         const nzr = rand(), nph = rand() * 6.2831853, nsn = Math.sqrt(1 - nzr * nzr), nx = nsn * Math.cos(nph), ny = nsn * Math.sin(nph);
         if (nzr < 0.5) cliffN++;
+        if (ff) { setFarForest(1); setFarForestDay(farForestDayOf(ff.sunI, ff.sunZ)); }
         shadeTerrain(tt, type, b, u, v, time, ctx, o, faceMode, z, nx, ny, nzr);
+        if (ff) { setFarForest(0); setFarForestDay(0); }
         const g = st(tt, type, b, u, v, time, faceMode, z, { x: nx, y: ny, z: nzr });
         const q = (x) => Math.floor(Math.min(255, Math.max(0, x)) + 0.5);
         n++; if (tt < 40) closeN++; if (faceMode && type === 2) faces++;
@@ -290,6 +293,22 @@ const setITex = toTex(packed.setI, SET_I_WIDTH, nSet);
   FGREC = null;
   assert.ok(base.faces > 100 && base.closeN > 300, `terrain coverage faces ${base.faces} close ${base.closeN}`);
   probes += base.n;
+  // OB-222 far forest lift ON (faceK[1].w = 1): JS twin == WGSL at noon / dusk x t 200 / 350 / 600 m on forest faces; any FF_ constant change is caught
+  {
+    const FFS = [{ sunI: 0.6, sunZ: 0.9 }, { sunI: 0.35, sunZ: 0.2 }];
+    for (const s of FFS) for (const t of [200, 350, 600]) {
+      const r = runTerrain(SHADE_WGSL, 300, 0, 0, null, { ...s, t });
+      assert.ok(r.bad <= r.n * 0.001, 'far forest ON sunI ' + s.sunI + ' t ' + t + ': ' + r.bad + '/' + r.n);
+    }
+    const mc = (a, b) => { const m = SHADE_WGSL.replace(a, b); assert.ok(m !== SHADE_WGSL, 'ff mutation target: ' + a); return m; };
+    const mut = (a, b, name) => assert.ok(runTerrain(mc(a, b), 300, 0, 0, null, { sunI: 0.35, sunZ: 0.2, t: 350 }).bad > 20, 'mutation caught: ' + name);
+    mut('(70.0000 - (0.2126', '(60.0000 - (0.2126', 'FF_FLOOR');
+    mut('/ 24.5000, 0.0, 1.0)', '/ 30.0000, 0.0, 1.0)', 'FF_RANGE');
+    mut('(t - 250.0000) / 250.0000', '(t - 300.0000) / 200.0000', 'FF_FADE');
+    mut('su.sunI / 0.6000', 'su.sunI / 0.9000', 'FF_SUN_REF');
+    mut('(su.sunDir.z - 0.0500) / 0.3500', '(su.sunDir.z - 0.0500) / 0.2500', 'FF_ELEV');
+    mut('(54.0000 - fr)', '(50.0000 - fr)', 'FF_TGT');
+  }
   // OB-104b2 (38.55): cliff look JS == WGSL (random normals), cliff cells covered, + mutations (threshold, axis pick)
   assert.ok(base.cliffN > 400, `cliff coverage ${base.cliffN}`);
   {
