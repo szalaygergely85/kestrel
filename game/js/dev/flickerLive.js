@@ -2,12 +2,25 @@
 // Per pose: 30 steps of 5 cm strafe + 5 cm forward in a static scene (wind speed 0, fb.timeSec 0, clock frozen by ?at),
 // after each step the N vs N-1 frame is compared with flickerStep -> totalPct + colourPct, averaged over the steps.
 // main.js calls `beforeRender(cam, world)` before the frame is drawn and `afterPresent()` after rt.present().
-import { flickerStep, flickerReprojStep, flickerGlyphReasons, GLYPH_REASONS, M255_KEYS, glyphClassTable, pitchedTerms, createPitchedTerms } from '../../../engine/index.js';
+import { flickerStep, flickerReprojStep, flickerGlyphReasons, flickerDefaultReasons, DEFAULT_REASONS, GLYPH_REASONS, M255_KEYS, glyphClassTable, pitchedTerms, createPitchedTerms } from '../../../engine/index.js';
 
 const VM_SAME = typeof location === 'undefined' || new URLSearchParams(location.search).get('flickervm') !== '0'; // AA-31 (OB-208): ?flickervm=0 = old vm mapping
 /** AA-10 diag: what the stable pass saw this frame (its own inputs + output + OUT_HIST), read straight from the pipeline; null = stable did not run. */
+// FD-01 (38.9y): `&flickerdef=1` = DEFAULT-path measurement: the pipeline is built with stable=1 only so shade writes texLevel, then runLivePoses
+// switches the stable pass OFF (setStable(false)); diagCapture returns the default set (mode 'default') and the default classifier runs.
+const DEF_PATH = typeof location !== 'undefined' && new URLSearchParams(location.search).get('flickerdef') === '1';
+const STILL_STEPS = 3;
 export async function diagCapture(wg) {
   const t = wg && wg._t, sp = wg && wg._stablePass;
+  if (t && t.texLevel && wg && !wg._stableRan) { // FD-01: stable off -> shade/final/light/level of this frame only (no hist/outFg)
+    const n = wg.cols * wg.rows, rect = { x: 0, y: 0, w: wg.cols, h: wg.rows }, dv = wg.device;
+    const r = { mode: 'default', cols: wg.cols, rows: wg.rows, GI: new Uint32Array(4 * n), GA: new Uint32Array(4 * n), Depth: new Uint32Array(n), level: new Uint8Array(n),
+      preFg: new Uint8Array(4 * n), finalBg: new Uint8Array(4 * n), shadeFg: new Uint8Array(4 * n), shadeBg: new Uint8Array(4 * n), Light: new Uint32Array(4 * n) };
+    await dv.readback(t.texGI, rect, r.GI); await dv.readback(t.texGA, rect, r.GA); await dv.readback(t.texDepth, rect, r.Depth); await dv.readback(t.texLevel, rect, r.level);
+    await dv.readback(t.texFinalFg, rect, r.preFg); await dv.readback(t.texFinalBg, rect, r.finalBg);
+    await dv.readback(t.texShadeFg, rect, r.shadeFg); await dv.readback(t.texShadeBg, rect, r.shadeBg); await dv.readback(t.texLight, rect, r.Light);
+    return r;
+  }
   if (!t || !sp || !wg._stableRan || !sp.outHist || !t.texLevel) return null;
   const n = wg.cols * wg.rows, rect = { x: 0, y: 0, w: wg.cols, h: wg.rows }, dv = wg.device, inp = wg._stInp || {};
   const r = { cols: wg.cols, rows: wg.rows, GI: new Uint32Array(4 * n), GA: new Uint32Array(4 * n), Depth: new Uint32Array(n), level: new Uint8Array(n),
@@ -70,7 +83,10 @@ export function createFlickerLive() {
       }
       if (h.player && world && world.get) { const pl = world.get('player'), t = pl && pl.data.transform; const b = pl && pl.data.components.body;
         if (t) { t.x = h.cam.x; t.y = h.cam.y; t.z = h.cam.z - EYE_H; t.yawDeg = h.cam.yawDeg; } if (b) { b.vx = 0; b.vy = 0; b.vz = 0; b.fallDistance = 0; b.peakZ = t.z; } } // AA-24: no fall damage from the teleport
-      if (world && world.wind && world.wind.params) world.wind.params.speed = 0; // static scene
+      if (world && world.wind && world.wind.params) { // static scene; the FD-01 still control (h.still) runs with the game's own wind speed
+        if (h.windSpeed === undefined) h.windSpeed = world.wind.params.speed;
+        world.wind.params.speed = h.still ? h.windSpeed : 0;
+      }
       cam.x = h.cam.x; cam.y = h.cam.y; cam.z = h.cam.z; cam.yawDeg = h.cam.yawDeg; cam.pitchDeg = h.cam.pitchDeg;
     },
     afterPresent() { if (waiters.length) { const w = waiters; waiters = []; for (const f of w) f(); } },
@@ -96,6 +112,7 @@ export function packDump(pose, step, prev, cur, cols, rows) { const n = cols * r
 /** Runs every pose; `capture()` -> { GI, fg, bg } of the frame just presented. `capture()` also returns Depth. Returns { poses: {slug: {totalPct, kindPct, materialPct, glyphOnlyPct, colourOnlyPct, n, excluded, oldTotalPct}}, avg, ... }. */
 export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCellH = 2, capture, getGrid = null, poses = POSES_ALL, steps = STEPS, settle = 60, dump = null, diag = false, place = null }) {
   let hmap = null; const terms = createPitchedTerms();
+  if (DEF_PATH && wg && wg.setStable) wg.setStable(false); // FD-01: default path (stable pass off; texLevel still allocated for the classifier)
   // AA-14a: glyph classes for the mixed255 split (line codes + the fog haze/sparse codes of the shade pass's uniforms)
   const fogU = wg && wg._cellPass && wg._cellPass.shadePass && wg._cellPass.shadePass.uniforms && wg._cellPass.shadePass.uniforms.fog;
   const gcls = glyphClassTable(fogU ? [...(fogU.hazeCodes || []), ...(fogU.sparseCodes || [])] : []);
@@ -119,6 +136,17 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
     if (wg && wg.invalidateHistory) wg.invalidateHistory(); // each pose starts with a camera cut
     await h.frames(settle); // streaming (meshes, carpet, shadows) settles
     let prev = await cap(); prev.cam = { ...cam };
+    let stillPct = null; // FD-01: 3 zero-move steps with the game's wind running = time-driven flips (wind sway, torches, clouds), not camera
+    if (DEF_PATH) {
+      let ss = 0, sn = 0; h.still = true; const so = {};
+      for (let k = 0; k < STILL_STEPS; k++) {
+        await h.frames(2); const cur = await cap(); cur.cam = { ...cam };
+        if (sameGrid(prev.grid, cur.grid)) { flickerReprojStep(prev, cur, prev.cam, cur.cam, cur.grid, so, null, gcls, VM_SAME); ss += so.glyphOnlyPct; sn++; }
+        prev = cur;
+      }
+      h.still = false; stillPct = sn ? ss / sn : null;
+      await h.frames(2); prev = await cap(); prev.cam = { ...cam }; // wind back to 0 (static scene) before the first camera step
+    }
     const acc = { oldTotalPct: 0 }; for (const k of KEYS) acc[k] = 0;
     const why = { kinds: {}, sub: {} }; // AA-DIAG-01: glyph-only flip reasons (counts; -> % of the diag's own n below)
     let used = 0;
@@ -133,16 +161,17 @@ export async function runLivePoses(h, { world, wg, cols, rows, pxCellW = 1, pxCe
       const dOk = diag && prev.diag && cur.diag && cur.diag.cols === gcols && prev.diag.cols === gcols && cur.diag.rows === grows;
       if (dOk && (!hmap || hmap.length !== gcols * grows)) hmap = new Int32Array(gcols * grows);
       flickerReprojStep(prev, cur, prev.cam, { ...cam }, cur.grid, out, dOk ? hmap : null, gcls, VM_SAME); // motion-compensated (AA-01b); AA-31 view model same cell
-      if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; tt.aaSeam = typeof location === 'undefined' || new URLSearchParams(location.search).get('aaseam') !== '0'; flickerGlyphReasons(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
+      if (dOk) { const tt = pitchedTerms({ ...cam }, cur.grid, terms); tt.gcls = gcls; tt.aaSeam = typeof location === 'undefined' || new URLSearchParams(location.search).get('aaseam') !== '0'; (cur.diag.mode === 'default' ? flickerDefaultReasons : flickerGlyphReasons)(cur.diag, prev.diag, hmap, gcols, grows, tt, why); }
       for (const k of KEYS) acc[k] += out[k];
       if (dump && !res.dump && dump.pose === p.slug && dump.step === s) res.dump = packDump(p.slug, s, prev, cur, gcols, grows); // OB198-DUMP-DIFF-01
       used++;
       cur.cam = { ...cam }; prev = cur;
     }
     const pr = {}; for (const k of Object.keys(acc)) pr[k] = acc[k] / Math.max(1, used);
-    if (why.n) { const w = { glyphOnlyPct: 100 * (why.flips || 0) / why.n, kinds: {} }; for (const k of [...GLYPH_REASONS, ...M255_KEYS]) w[k] = 100 * (why[k] || 0) / why.n;
+    if (why.n) { const w = { glyphOnlyPct: 100 * (why.flips || 0) / why.n, kinds: {} }; for (const k of [...GLYPH_REASONS, ...M255_KEYS, ...DEFAULT_REASONS]) w[k] = 100 * (why[k] || 0) / why.n;
       for (const k of Object.keys(why.kinds)) w.kinds[k] = 100 * why.kinds[k] / why.n;
       w.sub = {}; for (const k of Object.keys(why.sub)) w.sub[k] = 100 * why.sub[k] / why.n; pr.why = w; }
+    if (stillPct !== null) pr.stillPct = stillPct;
     pr.cols = prev.grid.cols; pr.rows = prev.grid.rows; pr.used = used; // diagnostics: which grid the pose was measured on
     res.poses[p.slug] = pr;
     if (p.sword && world.state) world.state['tower.sword.taken'] = swordWas;

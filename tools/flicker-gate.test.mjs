@@ -1,5 +1,5 @@
 // tools/flicker-gate.test.mjs: node tools/flicker-gate.test.mjs
-import { compare, extractPoses, formatTable, summarizeRuns, whyTable, pickFreshCapture } from './flicker-gate.mjs';
+import { gateQuery, defaultTable, DEFAULT_POSE_MARGIN, DEFAULT_AVG_MARGIN, compare, extractPoses, formatTable, summarizeRuns, whyTable, pickFreshCapture } from './flicker-gate.mjs';
 let fail = 0;
 const ok = (c, m) => { if (!c) { fail++; console.error('FAIL ' + m); } };
 const mk = (a, b, avg) => ({ poses: { wallNear: { totalPct: 6, glyphOnlyPct: a }, wallFar: { totalPct: 8, glyphOnlyPct: b } }, avg: { totalPct: 7, glyphOnlyPct: avg } });
@@ -25,5 +25,12 @@ ok(/wallNear/.test(wt) && /1\.50/.test(wt) && whyTable({ 'poses.wallNear.totalPc
 let threw = false; try { pickFreshCapture([{ n: 'old', t: 1000 }], 2000); } catch (e) { threw = /stale/.test(e.message); }
 ok(threw, 'stale capture -> throws (gate FAIL, exit 1)');
 ok(pickFreshCapture([{ n: 'old', t: 1000 }, { n: 'new', t: 3000 }], 2000) === 'new', 'fresh capture picked');
+// FD-01: default-path query + margins + class table
+ok(/flickerdef=1/.test(gateQuery('default', false)) && !/flickerdiag/.test(gateQuery('default', false)), 'default path query has flickerdef=1');
+ok(!/flickerdef/.test(gateQuery('stable', true)) && /flickerdiag=1/.test(gateQuery('stable', true)) && /stable=1/.test(gateQuery('stable', false)), 'stable path query: stable=1, no flickerdef');
+const dm = { pose: DEFAULT_POSE_MARGIN, avg: DEFAULT_AVG_MARGIN };
+ok(compare(mk(10.3, 7, 8), base, dm).ok && !compare(mk(10.31, 7, 8), base, dm).ok, 'default path: baseline + 0.3 abs');
+const dtab = defaultTable({ 'poses.wallNear.glyphOnlyPct': 3.5, 'poses.wallNear.why.glyphOnlyPct': 4, 'poses.wallNear.stillPct': 0.5, 'poses.wallNear.why.levelTex': 2, 'poses.wallNear.why.edge': 1, 'poses.wallNear.why.levelTex/jump': 0.5 });
+ok(/wallNear/.test(dtab) && /\(50\)/.test(dtab) && /\(25\)/.test(dtab) && defaultTable({}) === '', 'defaultTable shares');
 if (fail) { console.error(fail + ' failed'); process.exit(1); }
 console.log('flicker-gate: all passed');
