@@ -83,7 +83,9 @@ export const MOON_SWITCH_DEG = -6; // DN-01: below this sun elevation the light 
 /** `moon` (DN-01, default false = unchanged): below MOON_SWITCH_DEG light from the moon, i.e. the sun path at h + 12. */
 export function applySunHours(world, lights, h, path, on, moon = false) {
   sunFromHours(h, path, hourSunScratch);
-  if (moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG) sunFromHours(h + 12, path, hourSunScratch);
+  const isMoon = moon && hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
+  if (isMoon) sunFromHours(h + 12, path, hourSunScratch);
+  if (lights) lights.moonActive = isMoon; // RND-NIGHT-RIM-03: the light slot carries the moon (rim gate)
   setWorldSun(world, lights, hourSunScratch.elevationDeg, hourSunScratch.azimuthDeg, on);
 }
 /** AUD2-02: dark gap (deg below MOON_SWITCH_DEG) in which the moon-lit light stays off, so the sun<->moon direction flip is never visible. */
@@ -98,6 +100,7 @@ export function applySunPair(world, lights, shadowH, h, path, on) {
   const moon = hourSunScratch.elevationDeg < MOON_SWITCH_DEG;
   const gap = moon && hourSunScratch.elevationDeg > MOON_SWITCH_DEG - MOON_GAP_DEG;
   if (lights) {
+    lights.moonActive = moon; // RND-NIGHT-RIM-03: slot carries the moon only when the pair decided moon (the rim must not use a low dusk sun)
     sunFromHours(shadowH + (moon ? 12 : 0), path, hourSunScratch);
     worldSunScratch.elevation = hourSunScratch.elevationDeg; worldSunScratch.azimuth = hourSunScratch.azimuthDeg; worldSunScratch.on = on && !gap;
     lights.setSun(worldSunScratch);
@@ -740,7 +743,7 @@ export function liveSunScale(P) {
 function syncMoonRim(lights, P) {
   const m = lights.moonRim || (lights.moonRim = { k: 0, farM: MOON_RIM_FAR_M });
   const live = P && P.liveLook, s = lights.sun;
-  m.k = live && s && Number.isFinite(live.sunI) ? moonRimK(live.sunI, !!s.on, s.dir[2]) : 0;
+  m.k = live && s && lights.moonActive === true && Number.isFinite(live.sunI) ? moonRimK(live.sunI, !!s.on, s.dir[2]) : 0;
 }
 
 /**

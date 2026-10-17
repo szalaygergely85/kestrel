@@ -1,7 +1,9 @@
 // RND-NIGHT-RIM-03: moon rim rule (moonRim.js) + the lighting.js syncLiveSun hook + WGSL splice.
 import assert from 'node:assert/strict';
 import { moonRimK, moonRimAmount, setMoonRimEnabled, MOON_RIM_K, MOON_RIM_FAR_M } from './moonRim.js';
-import { syncLiveSun } from './lighting.js';
+import { syncLiveSun, applySunPair } from './lighting.js';
+import { SUN_PATH_DEFAULT } from '../core/sunPath.js';
+import { compileFn, shims } from './gpu/wgsl/wgslProbe.js';
 import { LIGHT_WGSL, LIGHT_GI_WGSL, LIGHT_BLOCK } from './gpu/wgsl/light.wgsl.js';
 
 let seed = 12345;
@@ -44,10 +46,45 @@ assert.ok(maxDiff < 1e-6, 'f32 twin within 1e-6 (' + maxDiff + ')');
 assert.equal(moonRimAmount(0, 0, 1, 0, 0, 1, 0, 0, 1, 10, k, MOON_RIM_FAR_M), 0, 'face-on (N.V = 1) has no rim: it is an edge term');
 
 // syncLiveSun hook: night + moon -> k>0; day -> 0; field exists once
-const mk = (sunI, on, dz) => ({ sun: { col: new Float32Array([1, 1, 1]), dir: new Float32Array([0, 0, dz]), on }, _P: { liveLook: { sunI, sun: 0 }, timeOfDay: { d: { sunI: 1 } }, defaultTime: 'd', hue: [[1, 1, 1]] } });
+const mk = (sunI, on, dz, moon = true) => ({ moonActive: moon, sun: { col: new Float32Array([1, 1, 1]), dir: new Float32Array([0, 0, dz]), on }, _P: { liveLook: { sunI, sun: 0 }, timeOfDay: { d: { sunI: 1 } }, defaultTime: 'd', hue: [[1, 1, 1]] } });
 const lt = mk(0.1, true, 0.7); syncLiveSun(lt, lt._P); assert.ok(lt.moonRim.k > 0, 'night hook');
 const ld = mk(1.0, true, 0.7); syncLiveSun(ld, ld._P); assert.equal(ld.moonRim.k, 0, 'day hook');
 const lg = mk(0.1, false, 0.7); syncLiveSun(lg, lg._P); assert.equal(lg.moonRim.k, 0, 'moon gap hook');
+
+// dusk (advisory): a low sun still in the light slot must not drive the rim, even with sunI already low
+const ls = mk(0.1, true, 0.3, false); syncLiveSun(ls, ls._P); assert.equal(ls.moonRim.k, 0, 'sun in the slot (not moon) -> no rim');
+{
+  const lights = { sun: { elevation: 0, azimuth: 0, on: false, dir: [0, 0, 1] }, setSun({ elevation, azimuth, on }) { this.sun.elevation = elevation; this.sun.azimuth = azimuth; this.sun.on = elevation > 0 ? !!on : false; } };
+  const world = { sun: { elevation: 0, azimuth: 0 }, sunSource: 'time' };
+  let moonOn = 0, sunLow = 0;
+  for (let step = 0; step < 24 * 160; step++) {
+    const h = step / 160, moon = applySunPair(world, lights, h, h, SUN_PATH_DEFAULT, true);
+    assert.equal(lights.moonActive, moon, 'flag follows the pair decision');
+    const Lx = { moonActive: lights.moonActive, sun: { ...lights.sun, col: new Float32Array([1, 1, 1]), dir: [0, 0, Math.sin(lights.sun.elevation * Math.PI / 180)] }, _P: { liveLook: { sunI: 0.1, sun: 0 }, timeOfDay: { d: { sunI: 1 } }, defaultTime: 'd', hue: [[1, 1, 1]] } };
+    syncLiveSun(Lx, Lx._P);
+    if (!moon) { if (Lx.moonRim.k !== 0) sunLow++; } else if (Lx.moonRim.k > 0) moonOn++;
+  }
+  assert.equal(sunLow, 0, 'rim never active while the slot carries the sun (dusk crossover)');
+  assert.ok(moonOn > 100, 'rim active in moon phase (' + moonOn + ')');
+}
+
+// WGSL execution: compile the spliced fn from LIGHT_WGSL and compare with the JS rule (+ mutation must fail)
+const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+function wgslCmp(src) {
+  const fn = compileFn(src, 'moonRimAmount', { ...shims, dot: dot3 });
+  let md = 0, n = 0;
+  for (let i = 0; i < 4000; i++) {
+    const N = unit(), V = unit(), L = unit(), dist = rnd() * 220;
+    const a = moonRimAmount(N[0], N[1], N[2], V[0], V[1], V[2], L[0], L[1], L[2], dist, MOON_RIM_K, MOON_RIM_FAR_M);
+    const b = fn({ x: N[0], y: N[1], z: N[2] }, { x: V[0], y: V[1], z: V[2] }, { x: L[0], y: L[1], z: L[2] }, dist, MOON_RIM_K, MOON_RIM_FAR_M);
+    if (a > 0) n++;
+    md = Math.max(md, Math.abs(a - b));
+  }
+  assert.ok(n > 500);
+  return md;
+}
+assert.ok(wgslCmp(LIGHT_WGSL) < 1e-9, 'executed WGSL == JS rule');
+assert.ok(wgslCmp(LIGHT_WGSL.replace('f * f *', 'f *')) > 1e-3, 'mutation (f*f -> f) is caught');
 
 // WGSL splice: both light variants carry the same rule, uniform appended last, gated on k
 for (const src of [LIGHT_WGSL, LIGHT_GI_WGSL]) {
