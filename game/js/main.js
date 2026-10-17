@@ -126,6 +126,7 @@ import { SPELL_DEFS } from './quest/spellDefs.js';
 import { countOf as invCountOf } from './quest/sim/inventory.js';
 import { createSpellBookHook } from './spellBookHook.js'; // SPELL-09
 import { createHeartHook } from './heartHook.js'; // QL-08: heart pieces -> max HP
+import { bindChestFlags, seedChestFlags } from './quest/chestFlags.js'; // QD-03/QD-05
 import { createChestHook } from './chestHook.js'; // S8-B1-04: chest sim + item-get card, through the seam only
 import { createMapFogHook } from './mapFogHook.js'; // S8-B1-16: visited-cell mask feed, through the seam only
 import { wireTelegraphs, telegraphsEnabled } from './fx/telegraphWire.js'; // TELEGRAPH-WIRE-01 (lane B1)
@@ -1849,6 +1850,7 @@ setNoteOfferProvider((id) => noteOffer.offerFor(id)); // OB-173: the note panel 
       if (bearTurn) dialogueCtl.addNpc('bear');
       dialogueCtl.addNpc('rook'); // Rook the crow: no-op until the entity exists in the world
       outwall = saveEnabled && saveRelay ? createOutwall({ world, questFlag: (k) => saveRelay.quest.questFlag(k) }) : null;
+      if (saveEnabled && saveRelay) { if (!window.__chestFlagsBound) { window.__chestFlagsBound = true; bindChestFlags(engine.events, (k) => saveRelay.quest.questFlag(k)); } seedChestFlags(saveRelay.openedChests, (k) => saveRelay.quest.questFlag(k)); } // QD-03/QD-05: chest opened -> quest flag chest.<id> (+ already-opened chests from the save)
       for (const nid of talkNpcIds(questGenCtx ? questGenCtx.giverDefs : [], bundle.dialogues)) if (nid !== 'bear') dialogueCtl.addNpc(nid); // QWALK-WARDEN-TALK + R6-FIX A: EVERY giver/turn-in npc with a dialogue (wardens, Bram, Joss ...) gets [E] Talk (bear: bearTurn rule above; addNpc is idempotent)
       // OB-155 follow-up: NPCs/givers re-seated on the floor once (stale saved z, spawned before near terrain) and again when near arrives
       npcSeat = createNpcSeat(world);
